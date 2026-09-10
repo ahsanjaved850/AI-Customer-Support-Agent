@@ -1,9 +1,10 @@
 # AI Customer Support Agent
 
 A monorepo containing a React + TypeScript client and an Express server for an
-AI-powered customer support agent. Paste an OpenAI or Anthropic API key,
-upload your company's policy docs and past support tickets, and the agent
-answers customer questions grounded in that data (RAG).
+AI-powered customer support agent. Any company can make it their own from the
+Setup tab — set a company name and accent color, paste an OpenAI or Anthropic
+API key, upload your company's policy docs and past support tickets — and the
+agent answers customer questions grounded in that data (RAG).
 
 ## Structure
 
@@ -35,9 +36,25 @@ The client is styled with [MUI](https://mui.com/) (`@mui/material`, MUI's own
   (Latin subset only, imported in `main.tsx`), no external font request at
   runtime.
 - Browser-tab favicon (`client/public/favicon.svg`) is the same
-  `SupportAgentIcon` glyph used in the header, on the theme's primary indigo
-  — if you change `theme.ts`'s primary color, update the SVG's `fill` to
-  match (it can't read the TS theme file, it's a static asset).
+  `SupportAgentIcon` glyph used in the header, on the theme's default indigo
+  — this one stays static (doesn't follow a company's custom accent color);
+  if you change `theme.ts`'s `DEFAULT_ACCENT_COLOR`, update the SVG's `fill`
+  by hand to match (it can't read the TS theme file, it's a static asset).
+
+### Company branding
+
+Setup → "Company branding" lets any company set their own name and accent
+color, no code changes needed:
+- **Company name** replaces "AI Customer Support Agent" in the browser tab
+  title, the AppBar, and the chat header, and is woven into the assistant's
+  greeting ("Hi! I'm *{name}*'s support assistant...").
+- **Accent color** overrides the theme's primary color app-wide (buttons,
+  AppBar, chat bubbles, etc.) — pick any color, MUI derives the light/dark/
+  contrast-text shades automatically.
+- Both are stored server-side in the same `server/data/config.json` as the
+  provider/API key, and take effect immediately (no page reload) via
+  `client/src/branding/BrandingProvider.tsx`, which every themed/branded
+  part of the app reads from.
 
 ### Chat UX
 
@@ -47,6 +64,11 @@ first chunk arrives, then the reply renders incrementally. Every assistant
 message — indicator, in-progress reply, and finished messages — shows the
 same `SupportAgentIcon` avatar next to it, WhatsApp-style; user messages are
 right-aligned with no avatar.
+
+Conversation history persists across a page refresh (saved to the browser's
+`localStorage`, capped at the last 50 messages) — see `client/src/lib/chatHistory.ts`.
+A "restart" icon button in the chat header starts a fresh conversation,
+clearing the saved history and cancelling any reply that's still streaming.
 
 ## Getting started
 
@@ -62,13 +84,14 @@ npm run dev
 - Server: http://localhost:3001
 
 On first load the client shows the **Setup** tab:
-1. Pick a provider (OpenAI or Anthropic) and paste your API key.
-2. Upload policy documents and/or past ticket Q&A (.txt, .md, .pdf).
-3. Optionally test retrieval directly before chatting.
+1. Optionally set your company name and accent color.
+2. Pick a provider (OpenAI or Anthropic) and paste your API key.
+3. Upload policy documents and/or past ticket Q&A (.txt, .md, .pdf).
+4. Optionally test retrieval directly before chatting.
 
-The key and ingested documents are stored locally in `server/data/`
-(gitignored) — plaintext on disk, fine for local/single-user use, not meant
-for a shared deployment.
+The key, branding, and ingested documents are stored locally in
+`server/data/` (gitignored) — plaintext on disk, fine for local/single-user
+use, not meant for a shared deployment.
 
 ## Scripts (root)
 
@@ -80,7 +103,11 @@ for a shared deployment.
 
 ## How it works
 
-- `POST /api/config` — save the LLM provider + API key.
+- `POST /api/config` — save any combination of the LLM provider + API key
+  and/or `companyName`/`accentColor`; each is validated and merged
+  independently (`server/src/lib/config.ts#updateConfig`) so saving one
+  never clobbers the other. `GET /api/config` returns whichever of those
+  fields are set, even before a provider/key exists.
 - `POST /api/documents` — upload files; each is chunked and embedded.
   - OpenAI key → OpenAI's `text-embedding-3-small`.
   - Anthropic key (no embeddings API) → a local model (`@xenova/transformers`,

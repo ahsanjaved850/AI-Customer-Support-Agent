@@ -5,18 +5,24 @@ import { createTheme, type PaletteMode, type ThemeOptions } from '@mui/material/
  * scale used anywhere in the app should trace back to this file — no raw
  * hex codes or magic pixel values in component styles.
  */
-function getDesignTokens(mode: PaletteMode): ThemeOptions {
+
+// Exported so other files (e.g. SetupPanel's accent-color picker default)
+// can reference the same value instead of duplicating the literal.
+export const DEFAULT_ACCENT_COLOR = '#4f46e5';
+
+function getDesignTokens(mode: PaletteMode, accentColor?: string): ThemeOptions {
   const isLight = mode === 'light';
+  // A company-supplied accent color overrides the default indigo. MUI's
+  // createTheme derives light/dark/contrastText from `main` automatically
+  // (via augmentColor) when only `main` is given.
+  const primary = accentColor
+    ? { main: accentColor }
+    : { main: DEFAULT_ACCENT_COLOR, light: '#818cf8', dark: '#3730a3', contrastText: '#ffffff' };
 
   return {
     palette: {
       mode,
-      primary: {
-        main: '#4f46e5',
-        light: '#818cf8',
-        dark: '#3730a3',
-        contrastText: '#ffffff',
-      },
+      primary,
       secondary: {
         main: '#0ea5e9',
         contrastText: '#ffffff',
@@ -75,6 +81,6 @@ function getDesignTokens(mode: PaletteMode): ThemeOptions {
   };
 }
 
-export function getTheme(mode: PaletteMode) {
-  return createTheme(getDesignTokens(mode));
+export function getTheme(mode: PaletteMode, accentColor?: string) {
+  return createTheme(getDesignTokens(mode, accentColor));
 }

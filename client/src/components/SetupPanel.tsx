@@ -21,10 +21,13 @@ import {
   deleteDocument,
   getConfig,
   listDocuments,
+  saveBranding,
   saveConfig,
   searchDocuments,
   uploadDocuments,
 } from '@/api';
+import { useBranding } from '@/branding/BrandingProvider';
+import { DEFAULT_ACCENT_COLOR } from '@/theme/theme';
 import type { ConfigStatus, DocType, DocumentMeta, Provider, SearchResult } from '@/types';
 import { FormBar, FormRow, ResultCard, SectionPaper, SetupStack } from './SetupPanel.style';
 
@@ -38,7 +41,14 @@ const DOC_TYPE_COLOR: Record<DocType, 'primary' | 'secondary'> = {
 };
 
 export function SetupPanel({ onConfigured }: Props) {
+  const { refresh: refreshBranding } = useBranding();
   const [config, setConfig] = useState<ConfigStatus | null>(null);
+
+  const [companyName, setCompanyName] = useState('');
+  const [accentColor, setAccentColor] = useState(DEFAULT_ACCENT_COLOR);
+  const [savingBranding, setSavingBranding] = useState(false);
+  const [brandingError, setBrandingError] = useState<string | null>(null);
+
   const [provider, setProvider] = useState<Provider>('openai');
   const [apiKey, setApiKey] = useState('');
   const [savingKey, setSavingKey] = useState(false);
@@ -54,7 +64,13 @@ export function SetupPanel({ onConfigured }: Props) {
   const [searching, setSearching] = useState(false);
 
   useEffect(() => {
-    getConfig().then(setConfig).catch(() => setConfig({ configured: false }));
+    getConfig()
+      .then((status) => {
+        setConfig(status);
+        setCompanyName(status.companyName ?? '');
+        setAccentColor(status.accentColor ?? DEFAULT_ACCENT_COLOR);
+      })
+      .catch(() => setConfig({ configured: false }));
     refreshDocuments();
   }, []);
 
@@ -62,6 +78,21 @@ export function SetupPanel({ onConfigured }: Props) {
     listDocuments()
       .then((res) => setDocuments(res.documents))
       .catch(() => setDocuments([]));
+  }
+
+  async function handleSaveBranding(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingBranding(true);
+    setBrandingError(null);
+    try {
+      const status = await saveBranding(companyName, accentColor);
+      setConfig(status);
+      refreshBranding();
+    } catch (err) {
+      setBrandingError(err instanceof Error ? err.message : 'Failed to save branding');
+    } finally {
+      setSavingBranding(false);
+    }
   }
 
   async function handleSaveKey(e: React.FormEvent) {
@@ -121,7 +152,40 @@ export function SetupPanel({ onConfigured }: Props) {
     <SetupStack>
       <SectionPaper elevation={1}>
         <Typography variant="subtitle1" gutterBottom>
-          1. LLM provider
+          1. Company branding
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          Shown in the browser tab, header, and chat — set your own name and accent color instead
+          of the defaults.
+        </Typography>
+
+        <FormBar onSubmit={handleSaveBranding}>
+          <TextField
+            placeholder="Company name"
+            value={companyName}
+            onChange={(e) => setCompanyName(e.target.value)}
+            sx={{ flex: 1, minWidth: 200 }}
+          />
+          <TextField
+            type="color"
+            value={accentColor}
+            onChange={(e) => setAccentColor(e.target.value)}
+            sx={{ width: 72 }}
+          />
+          <Button type="submit" variant="contained" disabled={savingBranding}>
+            {savingBranding ? 'Saving…' : 'Save branding'}
+          </Button>
+        </FormBar>
+        {brandingError && (
+          <Alert severity="error" variant="outlined" sx={{ mt: 2 }}>
+            {brandingError}
+          </Alert>
+        )}
+      </SectionPaper>
+
+      <SectionPaper elevation={1}>
+        <Typography variant="subtitle1" gutterBottom>
+          2. LLM provider
         </Typography>
         {config?.configured ? (
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
@@ -163,7 +227,7 @@ export function SetupPanel({ onConfigured }: Props) {
 
       <SectionPaper elevation={1}>
         <Typography variant="subtitle1" gutterBottom>
-          2. Company policy &amp; past tickets
+          3. Company policy &amp; past tickets
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           Upload .txt, .md, or .pdf files. Each is chunked and embedded so the agent can retrieve
@@ -212,7 +276,7 @@ export function SetupPanel({ onConfigured }: Props) {
 
       <SectionPaper elevation={1}>
         <Typography variant="subtitle1" gutterBottom>
-          3. Test retrieval
+          4. Test retrieval
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           Search the ingested data directly (no LLM call) to sanity-check it.

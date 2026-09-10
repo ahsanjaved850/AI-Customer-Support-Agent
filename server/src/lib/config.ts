@@ -5,9 +5,11 @@ import { fileURLToPath } from 'node:url';
 export type Provider = 'openai' | 'anthropic';
 
 export interface AppConfig {
-  provider: Provider;
-  apiKey: string;
+  provider?: Provider;
+  apiKey?: string;
   model?: string;
+  companyName?: string;
+  accentColor?: string;
 }
 
 // Resolve relative to this file (server/src/lib -> server/data), not
@@ -40,6 +42,18 @@ export function readConfig(): AppConfig | null {
 export function writeConfig(config: AppConfig): void {
   ensureDataDir();
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf-8');
+}
+
+/**
+ * Merge-aware update: reads the current config, applies `patch` on top, and
+ * persists the result. Use this instead of `writeConfig` for any partial
+ * update (e.g. saving branding shouldn't drop a previously-saved provider
+ * key, and vice versa) — `writeConfig` itself stays a dumb full overwrite.
+ */
+export function updateConfig(patch: Partial<AppConfig>): AppConfig {
+  const merged: AppConfig = { ...(readConfig() ?? {}), ...patch };
+  writeConfig(merged);
+  return merged;
 }
 
 export function isConfigured(): boolean {

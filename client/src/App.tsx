@@ -6,6 +6,7 @@ import SupportAgentIcon from '@mui/icons-material/SupportAgent';
 import { ChatWidget } from '@/components/ChatWidget';
 import { SetupPanel } from '@/components/SetupPanel';
 import { getConfig } from '@/api';
+import { DEFAULT_COMPANY_NAME, useBranding } from '@/branding/BrandingProvider';
 import { useColorMode } from '@/theme/ColorModeProvider';
 import { AppShell, ContentContainer } from './App.style';
 
@@ -15,6 +16,7 @@ export function App() {
   const [tab, setTab] = useState<TabValue>('setup');
   const [checkedConfig, setCheckedConfig] = useState(false);
   const { mode, toggleColorMode } = useColorMode();
+  const { companyName } = useBranding();
 
   useEffect(() => {
     getConfig()
@@ -29,7 +31,7 @@ export function App() {
         <Toolbar sx={{ gap: 1 }}>
           <SupportAgentIcon color="primary" sx={{ mr: 1 }} />
           <Typography variant="h6" sx={{ flexGrow: 1 }}>
-            AI Customer Support Agent
+            {companyName ?? DEFAULT_COMPANY_NAME}
           </Typography>
           <Tabs value={tab} onChange={(_e, value: TabValue) => setTab(value)}>
             <Tab value="chat" label="Chat" />
