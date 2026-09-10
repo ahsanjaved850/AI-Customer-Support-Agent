@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { requireAuth } from '../lib/auth.js';
 import { readConfig, updateConfig, maskKey, type AppConfig, type Provider } from '../lib/config.js';
 
 export const configRouter = Router();
@@ -21,7 +22,9 @@ configRouter.get('/config', (_req, res) => {
   res.json(toStatus(readConfig()));
 });
 
-configRouter.post('/config', (req, res) => {
+// GET stays public — BrandingProvider needs companyName/accentColor on
+// every page load, including the customer-facing chat view, not just Setup.
+configRouter.post('/config', requireAuth, (req, res) => {
   const { provider, apiKey, model, companyName, accentColor } = req.body as {
     provider?: Provider;
     apiKey?: string;

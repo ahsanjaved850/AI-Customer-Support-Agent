@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { streamReply } from '../lib/agent.js';
+import { chatRateLimiter } from '../lib/rateLimit.js';
 import type { ChatMessage, ChatRequestBody } from '../types.js';
 
 export const chatRouter = Router();
@@ -14,7 +15,7 @@ function isValidMessage(m: unknown): m is ChatMessage {
   );
 }
 
-chatRouter.post('/chat', async (req, res) => {
+chatRouter.post('/chat', chatRateLimiter, async (req, res) => {
   const body = req.body as Partial<ChatRequestBody>;
 
   if (!Array.isArray(body.messages) || !body.messages.every(isValidMessage)) {

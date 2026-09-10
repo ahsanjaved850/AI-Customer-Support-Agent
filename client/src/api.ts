@@ -1,14 +1,58 @@
-import type { ChatMessage, ConfigStatus, DocType, DocumentMeta, Provider, SearchResult } from './types';
+import type {
+  AuthStatus,
+  ChatMessage,
+  ConfigStatus,
+  DocType,
+  DocumentMeta,
+  Provider,
+  SearchResult,
+} from './types';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? '';
 
+/** Thrown by request() with the HTTP status attached, so callers can tell a
+ * 401 (session expired / not logged in) apart from any other failure. */
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, init);
+  // credentials: 'include' sends the admin session cookie on every request —
+  // harmless for public endpoints, required for gated ones (see server's
+  // lib/auth.ts). Works both through the Vite dev proxy (same-origin) and
+  // when the client is served from a different origin than the API.
+  const res = await fetch(`${API_BASE}${path}`, { ...init, credentials: 'include' });
   if (!res.ok) {
     const body = await res.json().catch(() => null);
-    throw new Error(body?.error ?? `Request failed: ${res.status}`);
+    throw new ApiError(body?.error ?? `Request failed: ${res.status}`, res.status);
   }
   return res.json() as Promise<T>;
+}
+
+/** True if `err` is an ApiError for an expired/missing admin session. */
+export function isAuthError(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 401;
+}
+
+export function getAuthStatus(): Promise<AuthStatus> {
+  return request<AuthStatus>('/api/auth/status');
+}
+
+export function login(password: string): Promise<AuthStatus> {
+  return request<AuthStatus>('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password }),
+  });
+}
+
+export function logout(): Promise<AuthStatus> {
+  return request<AuthStatus>('/api/auth/logout', { method: 'POST' });
 }
 
 /**
