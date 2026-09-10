@@ -8,8 +8,15 @@ export interface ChatMessage {
 export type Provider = 'openai' | 'anthropic';
 
 export type ConfigStatus =
-  | { configured: false }
-  | { configured: true; provider: Provider; maskedKey: string; model?: string };
+  | { configured: false; companyName?: string; accentColor?: string }
+  | {
+      configured: true;
+      provider: Provider;
+      maskedKey: string;
+      model?: string;
+      companyName?: string;
+      accentColor?: string;
+    };
 
 export type DocType = 'policy' | 'ticket';
 

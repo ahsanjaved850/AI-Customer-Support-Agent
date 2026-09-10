@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, IconButton, TextField } from '@mui/material';
+import { Alert, Box, IconButton, TextField } from '@mui/material';
+import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import SendIcon from '@mui/icons-material/Send';
 import SupportAgentIcon from '@mui/icons-material/SupportAgent';
 import { sendChatStream } from '@/api';
+import { DEFAULT_COMPANY_NAME, useBranding } from '@/branding/BrandingProvider';
+import { clearStoredMessages, readStoredMessages, writeStoredMessages } from '@/lib/chatHistory';
 import type { ChatMessage } from '@/types';
 import {
   AssistantAvatar,
@@ -15,13 +18,24 @@ import {
   TypingDots,
 } from './ChatWidget.style';
 
-const GREETING: ChatMessage = {
-  role: 'assistant',
-  content: 'Hi! I’m your support assistant. How can I help today?',
-};
+function buildGreeting(companyName: string | null): ChatMessage {
+  return {
+    role: 'assistant',
+    content: companyName
+      ? `Hi! I’m ${companyName}’s support assistant. How can I help today?`
+      : 'Hi! I’m your support assistant. How can I help today?',
+  };
+}
+
+function isAbortError(err: unknown): boolean {
+  return err instanceof Error && err.name === 'AbortError';
+}
 
 export function ChatWidget() {
-  const [messages, setMessages] = useState<ChatMessage[]>([GREETING]);
+  const { companyName } = useBranding();
+  const [messages, setMessages] = useState<ChatMessage[]>(
+    () => readStoredMessages() ?? [buildGreeting(companyName)],
+  );
   const [input, setInput] = useState('');
   // Submitted, no tokens received yet — shows the bouncing-dots indicator.
   const [isWaiting, setIsWaiting] = useState(false);
@@ -30,11 +44,19 @@ export function ChatWidget() {
   const [streamingText, setStreamingText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
   const busy = isWaiting || isStreaming;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isWaiting, streamingText]);
+
+  // Persist only completed exchanges — this effect is keyed on `messages`
+  // alone, which never changes mid-stream (streamingText/isWaiting/
+  // isStreaming are separate state), so in-flight replies are never written.
+  useEffect(() => {
+    writeStoredMessages(messages);
+  }, [messages]);
 
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
@@ -48,19 +70,28 @@ export function ChatWidget() {
     setStreamingText('');
     setIsWaiting(true);
 
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     try {
       let firstChunkReceived = false;
-      const full = await sendChatStream(next, (chunk) => {
-        if (!firstChunkReceived) {
-          firstChunkReceived = true;
-          setIsWaiting(false);
-          setIsStreaming(true);
-        }
-        setStreamingText((prev) => prev + chunk);
-      });
+      const full = await sendChatStream(
+        next,
+        (chunk) => {
+          if (!firstChunkReceived) {
+            firstChunkReceived = true;
+            setIsWaiting(false);
+            setIsStreaming(true);
+          }
+          setStreamingText((prev) => prev + chunk);
+        },
+        controller.signal,
+      );
       setMessages((prev) => [...prev, { role: 'assistant', content: full }]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong');
+      if (!isAbortError(err)) {
+        setError(err instanceof Error ? err.message : 'Something went wrong');
+      }
     } finally {
       setIsWaiting(false);
       setIsStreaming(false);
@@ -68,11 +99,25 @@ export function ChatWidget() {
     }
   }
 
+  function handleReset() {
+    abortRef.current?.abort();
+    setMessages([buildGreeting(companyName)]);
+    setInput('');
+    setError(null);
+    setIsWaiting(false);
+    setIsStreaming(false);
+    setStreamingText('');
+    clearStoredMessages();
+  }
+
   return (
     <ChatContainer elevation={2}>
       <ChatHeader>
         <SupportAgentIcon fontSize="small" />
-        Support
+        <Box sx={{ flexGrow: 1 }}>{companyName ?? DEFAULT_COMPANY_NAME}</Box>
+        <IconButton size="small" color="inherit" onClick={handleReset} aria-label="Start new conversation">
+          <RestartAltIcon fontSize="small" />
+        </IconButton>
       </ChatHeader>
 
       <MessageLog>

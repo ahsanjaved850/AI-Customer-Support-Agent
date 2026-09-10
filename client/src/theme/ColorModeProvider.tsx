@@ -1,6 +1,7 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
 import { CssBaseline, ThemeProvider, useMediaQuery } from '@mui/material';
 import type { PaletteMode } from '@mui/material';
+import { useBranding } from '@/branding/BrandingProvider';
 import { getTheme } from './theme';
 
 interface ColorModeContextValue {
@@ -24,11 +25,13 @@ function readStoredMode(): PaletteMode | null {
  * Wraps the app in a themed MUI context: resolves the initial mode from
  * localStorage, falling back to the OS preference, applies CssBaseline, and
  * exposes a toggle via useColorMode() for any component (e.g. the AppBar)
- * to flip it.
+ * to flip it. Also pulls the company's accent color from BrandingProvider
+ * (must be mounted above this) and re-themes whenever it changes.
  */
 export function ColorModeProvider({ children }: { children: ReactNode }) {
   const prefersDark = useMediaQuery('(prefers-color-scheme: dark)');
   const [mode, setMode] = useState<PaletteMode>(() => readStoredMode() ?? (prefersDark ? 'dark' : 'light'));
+  const { accentColor } = useBranding();
 
   const value = useMemo<ColorModeContextValue>(
     () => ({
@@ -48,7 +51,7 @@ export function ColorModeProvider({ children }: { children: ReactNode }) {
     [mode],
   );
 
-  const theme = useMemo(() => getTheme(mode), [mode]);
+  const theme = useMemo(() => getTheme(mode, accentColor ?? undefined), [mode, accentColor]);
 
   return (
     <ColorModeContext.Provider value={value}>

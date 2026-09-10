@@ -19,11 +19,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export async function sendChatStream(
   messages: ChatMessage[],
   onChunk: (chunk: string) => void,
+  signal?: AbortSignal,
 ): Promise<string> {
   const res = await fetch(`${API_BASE}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ messages }),
+    signal,
   });
 
   if (!res.ok) {
@@ -63,6 +65,14 @@ export function saveConfig(provider: Provider, apiKey: string, model?: string): 
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ provider, apiKey, model }),
+  });
+}
+
+export function saveBranding(companyName: string, accentColor: string): Promise<ConfigStatus> {
+  return request<ConfigStatus>('/api/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ companyName, accentColor }),
   });
 }
 
