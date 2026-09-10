@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { requireAuth } from '../lib/auth.js';
 import { embedQuery } from '../lib/embeddings.js';
 import { search } from '../lib/vectorStore.js';
 
@@ -6,11 +7,12 @@ export const searchRouter = Router();
 
 /**
  * Manual retrieval-testing endpoint: embed a query and return the closest
- * chunks, without involving the LLM. Useful for checking ingestion +
- * embeddings work before wiring retrieval into /api/chat (that wiring is
- * Phase 3).
+ * chunks, without involving the LLM. Used only by the Setup tab's "Test
+ * retrieval" section, not by the customer-facing chat widget — gated
+ * accordingly, since it would otherwise let anyone read raw chunk text out
+ * of the company's ingested documents by guessing queries.
  */
-searchRouter.get('/search', async (req, res) => {
+searchRouter.get('/search', requireAuth, async (req, res) => {
   const q = req.query.q;
   if (typeof q !== 'string' || !q.trim()) {
     return res.status(400).json({ error: 'Query param "q" is required' });
@@ -26,4 +28,3 @@ searchRouter.get('/search', async (req, res) => {
     return res.status(500).json({ error: message });
   }
 });
-

@@ -16,16 +16,21 @@ import {
 } from '@mui/material';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
+import LogoutIcon from '@mui/icons-material/Logout';
 import SearchIcon from '@mui/icons-material/Search';
 import {
   deleteDocument,
+  getAuthStatus,
   getConfig,
+  isAuthError,
   listDocuments,
+  logout,
   saveBranding,
   saveConfig,
   searchDocuments,
   uploadDocuments,
 } from '@/api';
+import { AdminLogin } from './AdminLogin';
 import { useBranding } from '@/branding/BrandingProvider';
 import { DEFAULT_ACCENT_COLOR } from '@/theme/theme';
 import type { ConfigStatus, DocType, DocumentMeta, Provider, SearchResult } from '@/types';
@@ -42,6 +47,11 @@ const DOC_TYPE_COLOR: Record<DocType, 'primary' | 'secondary'> = {
 
 export function SetupPanel({ onConfigured }: Props) {
   const { refresh: refreshBranding } = useBranding();
+
+  const [authChecked, setAuthChecked] = useState(false);
+  const [authRequired, setAuthRequired] = useState(false);
+  const [authenticated, setAuthenticated] = useState(true);
+
   const [config, setConfig] = useState<ConfigStatus | null>(null);
 
   const [companyName, setCompanyName] = useState('');
@@ -64,6 +74,21 @@ export function SetupPanel({ onConfigured }: Props) {
   const [searching, setSearching] = useState(false);
 
   useEffect(() => {
+    getAuthStatus()
+      .then((status) => {
+        setAuthRequired(status.authRequired);
+        setAuthenticated(status.authenticated);
+      })
+      .catch(() => {
+        setAuthRequired(false);
+        setAuthenticated(true);
+      })
+      .finally(() => setAuthChecked(true));
+  }, []);
+
+  // GET /config is public (BrandingProvider needs it on every page, not
+  // just here), so this can run regardless of auth state.
+  useEffect(() => {
     getConfig()
       .then((status) => {
         setConfig(status);
@@ -71,13 +96,37 @@ export function SetupPanel({ onConfigured }: Props) {
         setAccentColor(status.accentColor ?? DEFAULT_ACCENT_COLOR);
       })
       .catch(() => setConfig({ configured: false }));
-    refreshDocuments();
   }, []);
+
+  // GET /documents is gated — only fetch once we know login isn't needed
+  // (or has already succeeded), so an unauthenticated visitor doesn't fire
+  // a doomed request before the login form even renders.
+  useEffect(() => {
+    if (authChecked && (!authRequired || authenticated)) {
+      refreshDocuments();
+    }
+  }, [authChecked, authRequired, authenticated]);
 
   function refreshDocuments() {
     listDocuments()
       .then((res) => setDocuments(res.documents))
       .catch(() => setDocuments([]));
+  }
+
+  /** Returns true (and flips back to the login screen) if `err` was a 401 —
+   * an admin session that expired mid-use. Call at the top of a catch block;
+   * the caller should skip its usual error handling when this returns true. */
+  function handleAuthError(err: unknown): boolean {
+    if (isAuthError(err)) {
+      setAuthenticated(false);
+      return true;
+    }
+    return false;
+  }
+
+  async function handleLogout() {
+    await logout().catch(() => {});
+    setAuthenticated(false);
   }
 
   async function handleSaveBranding(e: React.FormEvent) {
@@ -89,7 +138,9 @@ export function SetupPanel({ onConfigured }: Props) {
       setConfig(status);
       refreshBranding();
     } catch (err) {
-      setBrandingError(err instanceof Error ? err.message : 'Failed to save branding');
+      if (!handleAuthError(err)) {
+        setBrandingError(err instanceof Error ? err.message : 'Failed to save branding');
+      }
     } finally {
       setSavingBranding(false);
     }
@@ -105,7 +156,9 @@ export function SetupPanel({ onConfigured }: Props) {
       setApiKey('');
       onConfigured?.();
     } catch (err) {
-      setKeyError(err instanceof Error ? err.message : 'Failed to save key');
+      if (!handleAuthError(err)) {
+        setKeyError(err instanceof Error ? err.message : 'Failed to save key');
+      }
     } finally {
       setSavingKey(false);
     }
@@ -121,7 +174,9 @@ export function SetupPanel({ onConfigured }: Props) {
       await uploadDocuments(files, docType);
       refreshDocuments();
     } catch (err) {
-      setUploadError(err instanceof Error ? err.message : 'Upload failed');
+      if (!handleAuthError(err)) {
+        setUploadError(err instanceof Error ? err.message : 'Upload failed');
+      }
     } finally {
       setUploading(false);
       e.target.value = '';
@@ -129,8 +184,12 @@ export function SetupPanel({ onConfigured }: Props) {
   }
 
   async function handleDelete(id: string) {
-    await deleteDocument(id);
-    refreshDocuments();
+    try {
+      await deleteDocument(id);
+      refreshDocuments();
+    } catch (err) {
+      handleAuthError(err);
+    }
   }
 
   async function handleSearch(e: React.FormEvent) {
@@ -142,14 +201,29 @@ export function SetupPanel({ onConfigured }: Props) {
       setResults(res.results);
     } catch (err) {
       setResults(null);
-      setUploadError(err instanceof Error ? err.message : 'Search failed');
+      if (!handleAuthError(err)) {
+        setUploadError(err instanceof Error ? err.message : 'Search failed');
+      }
     } finally {
       setSearching(false);
     }
   }
 
+  if (!authChecked) return null;
+  if (authRequired && !authenticated) {
+    return <AdminLogin onSuccess={() => setAuthenticated(true)} />;
+  }
+
   return (
     <SetupStack>
+      {authRequired && (
+        <FormRow sx={{ justifyContent: 'flex-end' }}>
+          <Button size="small" startIcon={<LogoutIcon fontSize="small" />} onClick={handleLogout}>
+            Log out
+          </Button>
+        </FormRow>
+      )}
+
       <SectionPaper elevation={1}>
         <Typography variant="subtitle1" gutterBottom>
           1. Company branding

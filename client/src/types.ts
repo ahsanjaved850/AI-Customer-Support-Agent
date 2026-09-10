@@ -18,6 +18,11 @@ export type ConfigStatus =
       accentColor?: string;
     };
 
+export interface AuthStatus {
+  authRequired: boolean;
+  authenticated: boolean;
+}
+
 export type DocType = 'policy' | 'ticket';
 
 export interface DocumentMeta {

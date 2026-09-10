@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
+import { requireAuth } from '../lib/auth.js';
 import { extractText } from '../lib/extractText.js';
 import { chunkText } from '../lib/chunk.js';
 import { embedTexts } from '../lib/embeddings.js';
@@ -8,11 +9,13 @@ import { listDocuments, addDocument, deleteDocument, type DocType } from '../lib
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 export const documentsRouter = Router();
 
-documentsRouter.get('/documents', (_req, res) => {
+// Gated end to end — unlike GET /config, nothing customer-facing reads this
+// (only SetupPanel does), and it exposes internal document filenames.
+documentsRouter.get('/documents', requireAuth, (_req, res) => {
   res.json({ documents: listDocuments() });
 });
 
-documentsRouter.post('/documents', upload.array('files'), async (req, res) => {
+documentsRouter.post('/documents', requireAuth, upload.array('files'), async (req, res) => {
   const files = req.files as Express.Multer.File[] | undefined;
   const docType = (req.body.docType as DocType) ?? 'policy';
 
@@ -41,7 +44,7 @@ documentsRouter.post('/documents', upload.array('files'), async (req, res) => {
   }
 });
 
-documentsRouter.delete('/documents/:id', (req, res) => {
+documentsRouter.delete('/documents/:id', requireAuth, (req, res) => {
   const removed = deleteDocument(req.params.id);
   if (!removed) return res.status(404).json({ error: 'Document not found' });
   return res.json({ removed: true });
