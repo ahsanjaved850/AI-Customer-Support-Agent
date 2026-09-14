@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useParams } from 'react-router-dom';
 import { Alert, Box, IconButton, TextField } from '@mui/material';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import SendIcon from '@mui/icons-material/Send';
@@ -33,8 +34,9 @@ function isAbortError(err: unknown): boolean {
 
 export function ChatWidget() {
   const { companyName } = useBranding();
+  const { slug } = useParams<{ slug: string }>();
   const [messages, setMessages] = useState<ChatMessage[]>(
-    () => readStoredMessages() ?? [buildGreeting(companyName)],
+    () => (slug ? readStoredMessages(slug) : null) ?? [buildGreeting(companyName)],
   );
   const [input, setInput] = useState('');
   // Submitted, no tokens received yet — shows the bouncing-dots indicator.
@@ -55,8 +57,8 @@ export function ChatWidget() {
   // alone, which never changes mid-stream (streamingText/isWaiting/
   // isStreaming are separate state), so in-flight replies are never written.
   useEffect(() => {
-    writeStoredMessages(messages);
-  }, [messages]);
+    if (slug) writeStoredMessages(slug, messages);
+  }, [slug, messages]);
 
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
@@ -107,7 +109,7 @@ export function ChatWidget() {
     setIsWaiting(false);
     setIsStreaming(false);
     setStreamingText('');
-    clearStoredMessages();
+    if (slug) clearStoredMessages(slug);
   }
 
   return (

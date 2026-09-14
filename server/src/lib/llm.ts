@@ -14,11 +14,12 @@ const DEFAULT_MODELS = {
  * immediately instead of after the whole response is generated.
  */
 export async function chatCompleteStream(
+  companyId: number,
   systemPrompt: string,
   messages: ChatMessage[],
   onChunk: (text: string) => void,
 ): Promise<void> {
-  const config = readConfig();
+  const config = readConfig(companyId);
   if (!config?.apiKey) {
     throw new Error('No LLM provider configured. Set one up via POST /api/config.');
   }

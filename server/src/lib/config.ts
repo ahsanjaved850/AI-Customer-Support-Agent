@@ -1,6 +1,5 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { db } from './db.js';
+import { getCompanyById } from './companies.js';
 
 export type Provider = 'openai' | 'anthropic';
 
@@ -12,52 +11,67 @@ export interface AppConfig {
   accentColor?: string;
 }
 
-// Resolve relative to this file (server/src/lib -> server/data), not
-// process.cwd(), so it lands in the same place regardless of where `node`
-// was launched from.
-const DATA_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../data');
-const CONFIG_PATH = path.join(DATA_DIR, 'config.json');
-
 /**
- * Local, single-tenant config store. Holds the LLM provider + API key the
- * user entered in the setup screen.
+ * Per-company config store, backed by the `companies` table (see lib/db.ts).
+ * Holds the LLM provider + API key entered in that company's Setup screen,
+ * plus its branding.
  *
- * NOTE: this is plaintext on disk, which is fine for a local/learning
- * project run by a single person. Do not reuse this approach as-is for a
- * multi-user or production deployment — use a secrets manager instead.
+ * NOTE: apiKey is plaintext in the DB, which is fine for a local/prototype
+ * deployment. Do not reuse this approach as-is for a production multi-tenant
+ * deployment — use a secrets manager instead.
  */
-function ensureDataDir(): void {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-}
-
-export function readConfig(): AppConfig | null {
-  try {
-    const raw = fs.readFileSync(CONFIG_PATH, 'utf-8');
-    return JSON.parse(raw) as AppConfig;
-  } catch {
-    return null;
-  }
-}
-
-export function writeConfig(config: AppConfig): void {
-  ensureDataDir();
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf-8');
+export function readConfig(companyId: number): AppConfig | null {
+  const company = getCompanyById(companyId);
+  if (!company) return null;
+  return {
+    provider: company.provider,
+    apiKey: company.apiKey,
+    model: company.model,
+    companyName: company.name,
+    accentColor: company.accentColor,
+  };
 }
 
 /**
- * Merge-aware update: reads the current config, applies `patch` on top, and
- * persists the result. Use this instead of `writeConfig` for any partial
- * update (e.g. saving branding shouldn't drop a previously-saved provider
- * key, and vice versa) — `writeConfig` itself stays a dumb full overwrite.
+ * Merge-aware update: applies `patch` on top of the company's current row.
+ * Lets the branding form and the provider/key form in Setup each POST
+ * independently without clobbering the other.
  */
-export function updateConfig(patch: Partial<AppConfig>): AppConfig {
-  const merged: AppConfig = { ...(readConfig() ?? {}), ...patch };
-  writeConfig(merged);
-  return merged;
+export function updateConfig(companyId: number, patch: Partial<AppConfig>): AppConfig {
+  const fields: string[] = [];
+  const values: unknown[] = [];
+
+  if (patch.provider !== undefined) {
+    fields.push('provider = ?');
+    values.push(patch.provider);
+  }
+  if (patch.apiKey !== undefined) {
+    fields.push('api_key = ?');
+    values.push(patch.apiKey);
+  }
+  if (patch.model !== undefined) {
+    fields.push('model = ?');
+    values.push(patch.model ?? null);
+  }
+  if (patch.companyName !== undefined) {
+    fields.push('name = ?');
+    values.push(patch.companyName);
+  }
+  if (patch.accentColor !== undefined) {
+    fields.push('accent_color = ?');
+    values.push(patch.accentColor ?? null);
+  }
+
+  if (fields.length > 0) {
+    values.push(companyId);
+    db.prepare(`UPDATE companies SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+  }
+
+  return readConfig(companyId)!;
 }
 
-export function isConfigured(): boolean {
-  const config = readConfig();
+export function isConfigured(companyId: number): boolean {
+  const config = readConfig(companyId);
   return Boolean(config?.apiKey);
 }
 

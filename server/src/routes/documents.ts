@@ -11,8 +11,8 @@ export const documentsRouter = Router();
 
 // Gated end to end — unlike GET /config, nothing customer-facing reads this
 // (only SetupPanel does), and it exposes internal document filenames.
-documentsRouter.get('/documents', requireAuth, (_req, res) => {
-  res.json({ documents: listDocuments() });
+documentsRouter.get('/documents', requireAuth, (req, res) => {
+  res.json({ documents: listDocuments(req.company.id) });
 });
 
 documentsRouter.post('/documents', requireAuth, upload.array('files'), async (req, res) => {
@@ -33,8 +33,8 @@ documentsRouter.post('/documents', requireAuth, upload.array('files'), async (re
       const chunks = chunkText(text);
       if (chunks.length === 0) continue;
 
-      const embeddings = await embedTexts(chunks);
-      results.push(addDocument(file.originalname, docType, chunks, embeddings));
+      const embeddings = await embedTexts(req.company.id, chunks);
+      results.push(addDocument(req.company.id, file.originalname, docType, chunks, embeddings));
     }
     return res.json({ documents: results });
   } catch (err) {
@@ -45,7 +45,7 @@ documentsRouter.post('/documents', requireAuth, upload.array('files'), async (re
 });
 
 documentsRouter.delete('/documents/:id', requireAuth, (req, res) => {
-  const removed = deleteDocument(req.params.id);
+  const removed = deleteDocument(req.company.id, req.params.id);
   if (!removed) return res.status(404).json({ error: 'Document not found' });
   return res.json({ removed: true });
 });

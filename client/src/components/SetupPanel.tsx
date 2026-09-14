@@ -36,21 +36,19 @@ import { DEFAULT_ACCENT_COLOR } from '@/theme/theme';
 import type { ConfigStatus, DocType, DocumentMeta, Provider, SearchResult } from '@/types';
 import { FormBar, FormRow, ResultCard, SectionPaper, SetupStack } from './SetupPanel.style';
 
-interface Props {
-  onConfigured?: () => void;
-}
-
 const DOC_TYPE_COLOR: Record<DocType, 'primary' | 'secondary'> = {
   policy: 'primary',
   ticket: 'secondary',
 };
 
-export function SetupPanel({ onConfigured }: Props) {
+// Auth is always required now — every company has its own admin
+// username/password (see server/src/lib/auth.ts), there's no more
+// "no ADMIN_PASSWORD set" no-op mode.
+export function SetupPanel() {
   const { refresh: refreshBranding } = useBranding();
 
   const [authChecked, setAuthChecked] = useState(false);
-  const [authRequired, setAuthRequired] = useState(false);
-  const [authenticated, setAuthenticated] = useState(true);
+  const [authenticated, setAuthenticated] = useState(false);
 
   const [config, setConfig] = useState<ConfigStatus | null>(null);
 
@@ -75,14 +73,8 @@ export function SetupPanel({ onConfigured }: Props) {
 
   useEffect(() => {
     getAuthStatus()
-      .then((status) => {
-        setAuthRequired(status.authRequired);
-        setAuthenticated(status.authenticated);
-      })
-      .catch(() => {
-        setAuthRequired(false);
-        setAuthenticated(true);
-      })
+      .then((status) => setAuthenticated(status.authenticated))
+      .catch(() => setAuthenticated(false))
       .finally(() => setAuthChecked(true));
   }, []);
 
@@ -102,10 +94,10 @@ export function SetupPanel({ onConfigured }: Props) {
   // (or has already succeeded), so an unauthenticated visitor doesn't fire
   // a doomed request before the login form even renders.
   useEffect(() => {
-    if (authChecked && (!authRequired || authenticated)) {
+    if (authChecked && authenticated) {
       refreshDocuments();
     }
-  }, [authChecked, authRequired, authenticated]);
+  }, [authChecked, authenticated]);
 
   function refreshDocuments() {
     listDocuments()
@@ -154,7 +146,6 @@ export function SetupPanel({ onConfigured }: Props) {
       const status = await saveConfig(provider, apiKey);
       setConfig(status);
       setApiKey('');
-      onConfigured?.();
     } catch (err) {
       if (!handleAuthError(err)) {
         setKeyError(err instanceof Error ? err.message : 'Failed to save key');
@@ -210,19 +201,17 @@ export function SetupPanel({ onConfigured }: Props) {
   }
 
   if (!authChecked) return null;
-  if (authRequired && !authenticated) {
+  if (!authenticated) {
     return <AdminLogin onSuccess={() => setAuthenticated(true)} />;
   }
 
   return (
     <SetupStack>
-      {authRequired && (
-        <FormRow sx={{ justifyContent: 'flex-end' }}>
-          <Button size="small" startIcon={<LogoutIcon fontSize="small" />} onClick={handleLogout}>
-            Log out
-          </Button>
-        </FormRow>
-      )}
+      <FormRow sx={{ justifyContent: 'flex-end' }}>
+        <Button size="small" startIcon={<LogoutIcon fontSize="small" />} onClick={handleLogout}>
+          Log out
+        </Button>
+      </FormRow>
 
       <SectionPaper elevation={1}>
         <Typography variant="subtitle1" gutterBottom>

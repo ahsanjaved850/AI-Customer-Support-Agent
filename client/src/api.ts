@@ -21,12 +21,30 @@ export class ApiError extends Error {
   }
 }
 
+// The company slug for the page currently mounted — set by BrandingProvider
+// as soon as it reads the route (during render, before any effect runs), so
+// every api.ts call made from a child component's effect is already scoped
+// correctly. Every route in this app is company-scoped, so a call made with
+// no slug set is a bug, not a fallback case.
+let currentSlug: string | null = null;
+
+export function setCurrentCompanySlug(slug: string | null): void {
+  currentSlug = slug;
+}
+
+function companyPath(path: string): string {
+  if (!currentSlug) {
+    throw new Error('No company selected — companyPath() called outside a /c/:slug or /admin/:slug route');
+  }
+  return `/api/c/${currentSlug}${path}`;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // credentials: 'include' sends the admin session cookie on every request —
   // harmless for public endpoints, required for gated ones (see server's
   // lib/auth.ts). Works both through the Vite dev proxy (same-origin) and
   // when the client is served from a different origin than the API.
-  const res = await fetch(`${API_BASE}${path}`, { ...init, credentials: 'include' });
+  const res = await fetch(`${API_BASE}${companyPath(path)}`, { ...init, credentials: 'include' });
   if (!res.ok) {
     const body = await res.json().catch(() => null);
     throw new ApiError(body?.error ?? `Request failed: ${res.status}`, res.status);
@@ -40,19 +58,19 @@ export function isAuthError(err: unknown): boolean {
 }
 
 export function getAuthStatus(): Promise<AuthStatus> {
-  return request<AuthStatus>('/api/auth/status');
+  return request<AuthStatus>('/auth/status');
 }
 
-export function login(password: string): Promise<AuthStatus> {
-  return request<AuthStatus>('/api/auth/login', {
+export function login(username: string, password: string): Promise<AuthStatus> {
+  return request<AuthStatus>('/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password }),
+    body: JSON.stringify({ username, password }),
   });
 }
 
 export function logout(): Promise<AuthStatus> {
-  return request<AuthStatus>('/api/auth/logout', { method: 'POST' });
+  return request<AuthStatus>('/auth/logout', { method: 'POST' });
 }
 
 /**
@@ -65,7 +83,7 @@ export async function sendChatStream(
   onChunk: (chunk: string) => void,
   signal?: AbortSignal,
 ): Promise<string> {
-  const res = await fetch(`${API_BASE}/api/chat`, {
+  const res = await fetch(`${API_BASE}${companyPath('/chat')}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ messages }),
@@ -101,11 +119,11 @@ export async function sendChatStream(
 }
 
 export function getConfig(): Promise<ConfigStatus> {
-  return request<ConfigStatus>('/api/config');
+  return request<ConfigStatus>('/config');
 }
 
 export function saveConfig(provider: Provider, apiKey: string, model?: string): Promise<ConfigStatus> {
-  return request<ConfigStatus>('/api/config', {
+  return request<ConfigStatus>('/config', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ provider, apiKey, model }),
@@ -113,7 +131,7 @@ export function saveConfig(provider: Provider, apiKey: string, model?: string): 
 }
 
 export function saveBranding(companyName: string, accentColor: string): Promise<ConfigStatus> {
-  return request<ConfigStatus>('/api/config', {
+  return request<ConfigStatus>('/config', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ companyName, accentColor }),
@@ -121,7 +139,7 @@ export function saveBranding(companyName: string, accentColor: string): Promise<
 }
 
 export function listDocuments(): Promise<{ documents: DocumentMeta[] }> {
-  return request('/api/documents');
+  return request('/documents');
 }
 
 export function uploadDocuments(files: File[], docType: DocType): Promise<{ documents: DocumentMeta[] }> {
@@ -129,13 +147,13 @@ export function uploadDocuments(files: File[], docType: DocType): Promise<{ docu
   form.append('docType', docType);
   for (const file of files) form.append('files', file);
 
-  return request('/api/documents', { method: 'POST', body: form });
+  return request('/documents', { method: 'POST', body: form });
 }
 
 export function deleteDocument(id: string): Promise<{ removed: boolean }> {
-  return request(`/api/documents/${id}`, { method: 'DELETE' });
+  return request(`/documents/${id}`, { method: 'DELETE' });
 }
 
 export function searchDocuments(query: string): Promise<{ results: SearchResult[] }> {
-  return request(`/api/search?q=${encodeURIComponent(query)}`);
+  return request(`/search?q=${encodeURIComponent(query)}`);
 }

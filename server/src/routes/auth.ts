@@ -2,35 +2,32 @@ import { Router } from 'express';
 import {
   createSession,
   destroySession,
-  isAuthRequired,
-  isValidSession,
+  getSession,
   SESSION_COOKIE_NAME,
   SESSION_MAX_AGE_MS,
-  verifyPassword,
 } from '../lib/auth.js';
+import { verifyAdminLogin } from '../lib/companies.js';
 import { loginRateLimiter } from '../lib/rateLimit.js';
 
 export const authRouter = Router();
 
 authRouter.get('/auth/status', (req, res) => {
-  if (!isAuthRequired()) {
-    return res.json({ authRequired: false, authenticated: true });
-  }
-  const authenticated = isValidSession(req.cookies?.[SESSION_COOKIE_NAME]);
+  const session = getSession(req.cookies?.[SESSION_COOKIE_NAME]);
+  const authenticated = Boolean(session && session.companyId === req.company.id);
   res.json({ authRequired: true, authenticated });
 });
 
 authRouter.post('/auth/login', loginRateLimiter, (req, res) => {
-  if (!isAuthRequired()) {
-    return res.json({ authRequired: false, authenticated: true });
+  const { username, password } = req.body as { username?: string; password?: string };
+  if (
+    typeof username !== 'string' ||
+    typeof password !== 'string' ||
+    !verifyAdminLogin(req.company.id, username, password)
+  ) {
+    return res.status(401).json({ error: 'Incorrect username or password' });
   }
 
-  const { password } = req.body as { password?: string };
-  if (typeof password !== 'string' || !verifyPassword(password)) {
-    return res.status(401).json({ error: 'Incorrect password' });
-  }
-
-  const sessionId = createSession();
+  const sessionId = createSession(req.company.id);
   res.cookie(SESSION_COOKIE_NAME, sessionId, {
     httpOnly: true,
     sameSite: 'lax',
@@ -44,5 +41,5 @@ authRouter.post('/auth/login', loginRateLimiter, (req, res) => {
 authRouter.post('/auth/logout', (req, res) => {
   destroySession(req.cookies?.[SESSION_COOKIE_NAME]);
   res.clearCookie(SESSION_COOKIE_NAME, { path: '/' });
-  res.json({ authRequired: isAuthRequired(), authenticated: false });
+  res.json({ authRequired: true, authenticated: false });
 });

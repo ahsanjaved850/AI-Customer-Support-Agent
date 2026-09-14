@@ -19,8 +19,8 @@ searchRouter.get('/search', requireAuth, async (req, res) => {
   }
 
   try {
-    const vector = await embedQuery(q);
-    const results = search(vector, 5);
+    const vector = await embedQuery(req.company.id, q);
+    const results = search(req.company.id, vector, 5);
     return res.json({ results });
   } catch (err) {
     console.error('search error:', err);
