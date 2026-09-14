@@ -12,9 +12,8 @@ export const chatRateLimiter = rateLimit({
   message: { error: 'Too many messages — please wait a moment and try again.' },
 });
 
-// Slows down password-guessing against POST /api/auth/login. Only matters
-// once ADMIN_PASSWORD is set (see lib/auth.ts) — harmless no-op traffic
-// otherwise, since login itself is a no-op without a password configured.
+// Slows down password-guessing against POST /api/c/:slug/auth/login — every
+// company's admin login shares this limiter, keyed on IP (see lib/auth.ts).
 export const loginRateLimiter = rateLimit({
   windowMs: 15 * 60_000,
   max: 10,

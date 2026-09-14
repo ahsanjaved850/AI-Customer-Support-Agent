@@ -22,18 +22,22 @@ const TOP_K = 4;
  * (lib/vectorStore.ts) for the latest user message and folds them into the
  * system prompt so answers are grounded in company data when it's relevant.
  */
-export async function streamReply(messages: ChatMessage[], onChunk: (text: string) => void): Promise<void> {
-  const systemPrompt = await buildSystemPrompt(messages);
-  return chatCompleteStream(systemPrompt, messages, onChunk);
+export async function streamReply(
+  companyId: number,
+  messages: ChatMessage[],
+  onChunk: (text: string) => void,
+): Promise<void> {
+  const systemPrompt = await buildSystemPrompt(companyId, messages);
+  return chatCompleteStream(companyId, systemPrompt, messages, onChunk);
 }
 
-export async function buildSystemPrompt(messages: ChatMessage[]): Promise<string> {
+export async function buildSystemPrompt(companyId: number, messages: ChatMessage[]): Promise<string> {
   const lastUser = [...messages].reverse().find((m) => m.role === 'user');
   if (!lastUser) return BASE_SYSTEM_PROMPT;
 
   try {
-    const queryVector = await embedQuery(lastUser.content);
-    const results = search(queryVector, TOP_K);
+    const queryVector = await embedQuery(companyId, lastUser.content);
+    const results = search(companyId, queryVector, TOP_K);
     if (results.length === 0) return BASE_SYSTEM_PROMPT;
 
     const context = results

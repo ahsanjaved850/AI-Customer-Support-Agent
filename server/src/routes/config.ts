@@ -18,12 +18,12 @@ function toStatus(config: AppConfig | null) {
   };
 }
 
-configRouter.get('/config', (_req, res) => {
-  res.json(toStatus(readConfig()));
-});
-
 // GET stays public — BrandingProvider needs companyName/accentColor on
 // every page load, including the customer-facing chat view, not just Setup.
+configRouter.get('/config', (req, res) => {
+  res.json(toStatus(readConfig(req.company.id)));
+});
+
 configRouter.post('/config', requireAuth, (req, res) => {
   const { provider, apiKey, model, companyName, accentColor } = req.body as {
     provider?: Provider;
@@ -55,7 +55,11 @@ configRouter.post('/config', requireAuth, (req, res) => {
     if (typeof companyName !== 'string' || companyName.length > 80) {
       return res.status(400).json({ error: 'companyName must be a string of 80 characters or fewer' });
     }
-    patch.companyName = companyName.trim() || undefined;
+    // A company's name can't be cleared to nothing (companies.name is NOT
+    // NULL) — an empty submission is treated as "leave it unchanged" rather
+    // than an error.
+    const trimmed = companyName.trim();
+    if (trimmed) patch.companyName = trimmed;
   }
 
   if (accentColor !== undefined) {
@@ -65,6 +69,6 @@ configRouter.post('/config', requireAuth, (req, res) => {
     patch.accentColor = accentColor || undefined;
   }
 
-  const updated = updateConfig(patch);
+  const updated = updateConfig(req.company.id, patch);
   res.json(toStatus(updated));
 });

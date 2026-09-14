@@ -9,6 +9,7 @@ interface Props {
 // Simple, one-off form — no co-located .style.ts file, sx is enough per
 // this repo's own styling convention (see CLAUDE.md's Styling section).
 export function AdminLogin({ onSuccess }: Props) {
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -18,7 +19,7 @@ export function AdminLogin({ onSuccess }: Props) {
     setSubmitting(true);
     setError(null);
     try {
-      await login(password);
+      await login(username, password);
       setPassword('');
       onSuccess();
     } catch (err) {
@@ -37,17 +38,24 @@ export function AdminLogin({ onSuccess }: Props) {
     >
       <Typography variant="subtitle1">Admin sign-in required</Typography>
       <Typography variant="body2" color="text.secondary">
-        This deployment requires an admin password to change setup, provider keys, or documents.
+        Sign in with this company's admin username and password to change setup, provider keys, or
+        documents.
       </Typography>
       <TextField
-        type="password"
-        placeholder="Admin password"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
+        placeholder="Username"
+        value={username}
+        onChange={(e) => setUsername(e.target.value)}
         autoFocus
         required
       />
-      <Button type="submit" variant="contained" disabled={submitting || !password}>
+      <TextField
+        type="password"
+        placeholder="Password"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+        required
+      />
+      <Button type="submit" variant="contained" disabled={submitting || !username || !password}>
         {submitting ? 'Signing in…' : 'Sign in'}
       </Button>
       {error && (

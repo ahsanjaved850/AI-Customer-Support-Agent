@@ -1,7 +1,5 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { fileURLToPath } from 'node:url';
+import { db } from './db.js';
 
 export type DocType = 'policy' | 'ticket';
 
@@ -13,15 +11,6 @@ export interface DocumentMeta {
   chunkCount: number;
 }
 
-interface Chunk {
-  id: string;
-  docId: string;
-  filename: string;
-  docType: DocType;
-  text: string;
-  embedding: number[];
-}
-
 export interface SearchResult {
   text: string;
   score: number;
@@ -30,92 +19,80 @@ export interface SearchResult {
   docType: DocType;
 }
 
-// Resolve relative to this file (server/src/lib -> server/data), not
-// process.cwd(), so it lands in the same place regardless of where `node`
-// was launched from.
-const DATA_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../data');
-const DOCS_PATH = path.join(DATA_DIR, 'documents.json');
-const VECTORS_PATH = path.join(DATA_DIR, 'vectors.json');
-
-function ensureDataDir(): void {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+interface DocumentRow {
+  id: string;
+  filename: string;
+  doc_type: DocType;
+  uploaded_at: string;
+  chunk_count: number;
 }
 
-function readJson<T>(filePath: string, fallback: T): T {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf-8')) as T;
-  } catch {
-    return fallback;
-  }
+interface ChunkRow {
+  id: string;
+  document_id: string;
+  filename: string;
+  doc_type: DocType;
+  text: string;
+  embedding: string;
 }
 
-function writeJson(filePath: string, data: unknown): void {
-  ensureDataDir();
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
+function rowToMeta(row: DocumentRow): DocumentMeta {
+  return {
+    id: row.id,
+    filename: row.filename,
+    docType: row.doc_type,
+    uploadedAt: row.uploaded_at,
+    chunkCount: row.chunk_count,
+  };
 }
 
-function loadDocuments(): DocumentMeta[] {
-  return readJson<DocumentMeta[]>(DOCS_PATH, []);
-}
-
-function loadChunks(): Chunk[] {
-  return readJson<Chunk[]>(VECTORS_PATH, []);
-}
-
-export function listDocuments(): DocumentMeta[] {
-  return loadDocuments();
+export function listDocuments(companyId: number): DocumentMeta[] {
+  const rows = db
+    .prepare('SELECT * FROM documents WHERE company_id = ? ORDER BY uploaded_at DESC')
+    .all(companyId) as DocumentRow[];
+  return rows.map(rowToMeta);
 }
 
 /**
- * Store a newly-ingested document: its registry entry plus one row per
- * embedded chunk. This is a flat JSON file acting as a tiny vector store —
- * fine at hundreds/low-thousands of chunks. Swap for SQLite+sqlite-vec or a
- * hosted vector DB if this ever needs to scale further.
+ * Store a newly-ingested document: its registry row plus one row per
+ * embedded chunk, scoped to `companyId` — SQLite standing in for a tiny
+ * per-tenant vector store (fine at hundreds/low-thousands of chunks per
+ * company; swap for a hosted vector DB if this ever needs to scale further).
  */
 export function addDocument(
+  companyId: number,
   filename: string,
   docType: DocType,
   chunkTexts: string[],
   embeddings: number[][],
 ): DocumentMeta {
   const docId = randomUUID();
-  const documents = loadDocuments();
-  const chunks = loadChunks();
+  const uploadedAt = new Date().toISOString();
 
-  const meta: DocumentMeta = {
-    id: docId,
-    filename,
-    docType,
-    uploadedAt: new Date().toISOString(),
-    chunkCount: chunkTexts.length,
-  };
+  const insertDoc = db.prepare(
+    'INSERT INTO documents (id, company_id, filename, doc_type, uploaded_at, chunk_count) VALUES (?, ?, ?, ?, ?, ?)',
+  );
+  const insertChunk = db.prepare(
+    'INSERT INTO chunks (id, document_id, company_id, filename, doc_type, text, embedding) VALUES (?, ?, ?, ?, ?, ?, ?)',
+  );
 
-  documents.push(meta);
-  for (let i = 0; i < chunkTexts.length; i++) {
-    chunks.push({
-      id: randomUUID(),
-      docId,
-      filename,
-      docType,
-      text: chunkTexts[i],
-      embedding: embeddings[i],
-    });
-  }
+  const insertAll = db.transaction(() => {
+    insertDoc.run(docId, companyId, filename, docType, uploadedAt, chunkTexts.length);
+    for (let i = 0; i < chunkTexts.length; i++) {
+      insertChunk.run(randomUUID(), docId, companyId, filename, docType, chunkTexts[i], JSON.stringify(embeddings[i]));
+    }
+  });
+  insertAll();
 
-  writeJson(DOCS_PATH, documents);
-  writeJson(VECTORS_PATH, chunks);
-  return meta;
+  return { id: docId, filename, docType, uploadedAt, chunkCount: chunkTexts.length };
 }
 
-export function deleteDocument(docId: string): boolean {
-  const documents = loadDocuments();
-  const remaining = documents.filter((d) => d.id !== docId);
-  if (remaining.length === documents.length) return false;
-
-  const chunks = loadChunks().filter((c) => c.docId !== docId);
-  writeJson(DOCS_PATH, remaining);
-  writeJson(VECTORS_PATH, chunks);
-  return true;
+// Scoped to companyId, not just id — without this a company could delete
+// another company's document by guessing its UUID. Chunks cascade-delete via
+// the chunks.document_id foreign key (see lib/db.ts's `foreign_keys = ON`).
+export function deleteDocument(companyId: number, docId: string): boolean {
+  const info = db.prepare('DELETE FROM documents WHERE id = ? AND company_id = ?').run(docId, companyId);
+  return info.changes > 0;
 }
 
 function cosineSimilarity(a: number[], b: number[]): number {
@@ -131,16 +108,16 @@ function cosineSimilarity(a: number[], b: number[]): number {
   return dot / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
-export function search(queryVector: number[], topK = 4): SearchResult[] {
-  const chunks = loadChunks();
+export function search(companyId: number, queryVector: number[], topK = 4): SearchResult[] {
+  const rows = db.prepare('SELECT * FROM chunks WHERE company_id = ?').all(companyId) as ChunkRow[];
 
-  return chunks
+  return rows
     .map((c) => ({
       text: c.text,
-      score: cosineSimilarity(queryVector, c.embedding),
-      docId: c.docId,
+      score: cosineSimilarity(queryVector, JSON.parse(c.embedding) as number[]),
+      docId: c.document_id,
       filename: c.filename,
-      docType: c.docType,
+      docType: c.doc_type,
     }))
     .sort((a, b) => b.score - a.score)
     .slice(0, topK);

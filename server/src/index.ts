@@ -7,11 +7,14 @@ import { chatRouter } from './routes/chat.js';
 import { configRouter } from './routes/config.js';
 import { documentsRouter } from './routes/documents.js';
 import { searchRouter } from './routes/search.js';
-import { isAuthRequired } from './lib/auth.js';
+import { resolveTenant } from './middleware/tenant.js';
+import { initSchema } from './lib/db.js';
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
+
+initSchema();
 
 // Only enable when actually behind a reverse proxy (nginx, Caddy, a
 // platform load balancer, etc.) — it makes Express trust the proxy's
@@ -37,11 +40,14 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
 
-app.use('/api', authRouter);
-app.use('/api', configRouter);
-app.use('/api', documentsRouter);
-app.use('/api', searchRouter);
-app.use('/api', chatRouter);
+// Every company-scoped route lives under /api/c/:slug — resolveTenant runs
+// first on each, resolving the slug to a company (404 if it doesn't exist)
+// and attaching it as req.company for the router behind it.
+app.use('/api/c/:slug', resolveTenant, authRouter);
+app.use('/api/c/:slug', resolveTenant, configRouter);
+app.use('/api/c/:slug', resolveTenant, documentsRouter);
+app.use('/api/c/:slug', resolveTenant, searchRouter);
+app.use('/api/c/:slug', resolveTenant, chatRouter);
 
 // Anything under /api that didn't match a route above — JSON, not
 // Express's default HTML 404 page, to keep API responses consistent.
@@ -66,10 +72,4 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
 
 app.listen(PORT, () => {
   console.log(`Server listening on http://localhost:${PORT}`);
-  if (!isAuthRequired()) {
-    console.warn(
-      'WARNING: ADMIN_PASSWORD is not set — the Setup tab (provider/API key, branding, documents) is UNPROTECTED. ' +
-        'Set ADMIN_PASSWORD in server/.env before exposing this server beyond localhost.',
-    );
-  }
 });

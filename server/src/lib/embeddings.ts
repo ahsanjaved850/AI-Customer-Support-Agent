@@ -28,8 +28,8 @@ async function getLocalExtractor(): Promise<LocalExtractor> {
  * on-device with no extra API key — this is what keeps setup to "paste one
  * key" regardless of provider.
  */
-export async function embedTexts(texts: string[]): Promise<number[][]> {
-  const config = readConfig();
+export async function embedTexts(companyId: number, texts: string[]): Promise<number[][]> {
+  const config = readConfig(companyId);
 
   if (config?.provider === 'openai' && config.apiKey) {
     return embedOpenAI(config.apiKey, texts);
@@ -37,8 +37,8 @@ export async function embedTexts(texts: string[]): Promise<number[][]> {
   return embedLocal(texts);
 }
 
-export async function embedQuery(text: string): Promise<number[]> {
-  const [vector] = await embedTexts([text]);
+export async function embedQuery(companyId: number, text: string): Promise<number[]> {
+  const [vector] = await embedTexts(companyId, [text]);
   return vector;
 }
 

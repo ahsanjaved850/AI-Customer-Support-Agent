@@ -32,7 +32,7 @@ chatRouter.post('/chat', chatRateLimiter, async (req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
 
   try {
-    await streamReply(body.messages, (chunk) => {
+    await streamReply(req.company.id, body.messages, (chunk) => {
       res.write(chunk);
     });
     res.end();
